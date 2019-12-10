@@ -1,0 +1,264 @@
+R Studio code:
+
+
+
+#Setting up the libraries
+library(readr)
+library(tidyverse)
+library(DESeq2)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(pheatmap)
+#Importing the mutation data for each cell line
+ovcar3 <- read_csv("NIHOVCAR3_OVARY Mutations.csv")
+skov3 <- read_csv("SKOV3_OVARY Mutations.csv")
+ovcar5 <- read_csv("OVCAR5_OVARY Mutations.csv")
+heya8 <- read_csv("HEYA8_OVARY Mutations.csv")
+es2 <- read_csv("ES2_OVARY Mutations.csv")
+#A comparison of OVCAR3 and SKOV3 Mutations
+comp1 <- inner_join(ovcar3,skov3,by="Annotation Transcript")
+#Importing the OVCAR3 counts
+ov3c1 <- read_tsv("GSM3944447_OV3-WT-1.counts.txt")
+ov3c2 <- read_tsv("GSM3944448_OV3-WT-2.counts.txt")
+ov3c3 <- read_tsv("GSM3944449_OV3-WT-3.counts.txt")
+ov3c1 <- as.data.frame(ov3c1)
+ov3c2 <- as.data.frame(ov3c2)
+ov3c3 <- as.data.frame(ov3c3)
+#Importing the SKOV3 counts
+sk3c1 <- read_tsv("GSM3944441_SKOV3-WT-1.counts.txt")
+sk3c2 <- read_tsv("GSM3944442_SKOV3-WT-2.counts.txt")
+sk3c3 <- read_tsv("GSM3944443_SKOV3-WT-3.counts.txt")
+sk3c1 <- as.data.frame(sk3c1)
+sk3c2 <- as.data.frame(sk3c2)
+sk3c3 <- as.data.frame(sk3c3)
+#20 cell line gene expression file
+big20 <- read_csv("GSE114332_all_cell_lines.csv")
+#Combining all of the OVCAR3/SKOV3 count files
+count1 <- bind_cols(ov3c1,ov3c2,ov3c3,sk3c1,sk3c2,sk3c3)
+count1 <- count1[,-c(3, 5, 7, 9, 11)]
+#Constructing a metadata file for the OVCAR3/SKOV3 comparison
+metadata1 <- metadata
+metadata1[,1] <- c("ov3c1","ov3c2","ov3c3","sk3c1","sk3c2","sk3c3")
+metadata1[,2] <- c("OVCAR3","OVCAR3","OVCAR3","SKOV3","SKOV3","SKOV3")
+#Redundant step to ensure these two are data frames
+count1 <- as.data.frame(count1)
+metadata1 <- as.data.frame(metadata1)
+#Running DESeq2 
+dds1.data <- DESeqDataSetFromMatrix(countData=count1, 
+                                   colData=metadata1, 
+                                   design=~dex, 
+                                   tidy=TRUE)
+dds1 <- DESeq(dds1.data)
+res1 <- results(dds1, tidy=TRUE)
+res1 <- tbl_df(res1)
+resPadj <- arrange(res1, padj)
+
+plotCounts(dds1, gene="CDH1", intgroup="dex")
+plotCounts(dds1, gene="LIN37", intgroup="dex")
+plotCounts(dds1, gene="LIN52", intgroup="dex")
+plotCounts(dds1, gene="CDK1", intgroup="dex")
+
+
+
+p1 <- plotCounts(dds1, gene="LIN9", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("LIN9") 
+p2 <- plotCounts(dds1, gene="LIN37", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("LIN37") 
+p3 <- plotCounts(dds1, gene="LIN52", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("LIN52") 
+p4 <- plotCounts(dds1, gene="LIN54", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("LIN54") 
+p5 <- plotCounts(dds1, gene="RBBP4", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("RBBP4") 
+
+   gridExtra::grid.arrange(p1,p2,p3,p4,p5, top = "Human MuvB Complex Genes")
+   
+   
+BiocManager::install("ReportingTools")
+library(ReportingTools)
+
+des2Report <- HTMLReport(shortName = 'DE_OVCAR3_vs_SKOV3_with_DESeq2', title = 'Analysis of Differential Expression Between OVCAR3 and SKOV3 using DESeq2', factor = colData(dds1.data)$dex, reportDirectory = "./reports")
+publish(dds1,des2Report, pvalueCutoff=0.05)
+finish(des2Report)
+
+browseVignettes("ReportingTools")
+
+BiocManager::install("pheatmap")
+library(pheatmap)
+
+install.packages("gridExtra")
+
+
+ressig=mutate(res1,significance=ifelse(padj<0.05,"Significant","Non-significant"))
+ggplot(ressig) +
+  geom_point(aes(x=log2FoldChange, y=-log10(padj), colour=significance)) +
+  ggtitle("OVCAR3 vs SKOV3 Volcano") +
+  xlab("log2 fold change") + 
+  ylab("-log10 adjusted p-value") +
+  #scale_y_continuous(limits = c(0,50)) +
+  theme(legend.position = "none",
+        plot.title = element_text(size = rel(1.5), hjust = 0.5),
+        axis.title = element_text(size = rel(1.25)))  +
+  theme_bw()
+
+rld=rlog(dds1)
+pcaData <- plotPCA(rld, intgroup=c("dex"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+ggplot(pcaData, aes(PC1, PC2, color=dex, shape=dex)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed(ratio = 20)+
+  theme_bw()
+
+pheatmap(dds1.data)
+
+
+dds2 <- DESeq(dds1,test="LRT",reduced = ~1)
+res2 <- results(dds2)
+rldMatrix <- assay(rld)
+sigChanges <- rownames(res2)[res2$padj < 0.05 & !is.na(res2$padj)]
+sigMat <- rldMatrix[rownames(rldMatrix) %in% sigChanges,]
+annoDF <- as.data.frame(colData(rld)[,1,drop=FALSE])
+
+pheatmap(sigMat,
+         scale="row",
+         show_rownames = FALSE,
+         annotation_col = annoDF)
+data_subset <- as.matrix(dds1.data)
+pheatmap(data_subset)
+
+plotDispEsts(dds2)
+
+p1 <- plotCounts(dds1, gene="E2F4", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_continuous(breaks=seq(3000,4000,100)) + 
+  ggtitle("E2F4") 
+p2 <- plotCounts(dds1, gene="E2F5", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("E2F5") 
+p3 <- plotCounts(dds1, gene="TFDP1", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("DP1") 
+p4 <- plotCounts(dds1, gene="TFDP2", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("DP2") 
+p5 <- plotCounts(dds1, gene="TFDP3", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("DP3") 
+p6 <- plotCounts(dds1, gene="RBL1", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_continuous(breaks=seq(1000,2000,100)) + 
+  ggtitle("RBL1") 
+p7 <- plotCounts(dds1, gene="RBL2", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_continuous(breaks=seq(1000,2000,100)) + 
+  ggtitle("RBL2") 
+
+gridExtra::grid.arrange(p1,p2,p3,p4,p5,p6,p7, top = "Other DREAM Complex Genes")
+
+p1 <- plotCounts(dds1, gene="SFRP1", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("SFRP1") 
+p2 <- plotCounts(dds1, gene="PDPN", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("PDPN") 
+p3 <- plotCounts(dds1, gene="XIST", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("XIST") 
+p4 <- plotCounts(dds1, gene="AFAP1-AS1", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("AFAP1-AS1") 
+p5 <- plotCounts(dds1, gene="SLC17A9", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("SLC17A9") 
+p6 <- plotCounts(dds1, gene="GAL", intgroup="dex", returnData=TRUE) %>%
+  ggplot(aes(dex,count))+
+  geom_boxplot(aes(fill=dex))+
+  scale_y_log10() + 
+  ggtitle("GAL") 
+
+ 
+
+gridExtra::grid.arrange(p1,p2,p3,p4,p5,p6,top = "Largest Fold Changes")
+
+dev.off()
+
+hist(res1$pvalue[res1$baseMean > 1], breaks=20, col="grey50", border="white")
+
+
+MATLAB CODE:
+
+
+%Loading data from text file
+raw =  readtable('GSE114332_all_cell_lines.csv');
+%Creating table for DREAM complex components
+DREAMraw = raw(ismember(raw{:, 1}, {'LIN9', 'LIN37', 'LIN52', 'LIN54', 'RBBP4','E2F4', 'E2F5','RBL1','RBL2','DP1','DP2','DP3'}), :);
+%Creating table searching for known CT genes
+CTraw = raw(contains(raw{:, 1}, {'AKAP','CT45','CT10','NY-ESO','MAGE','TRAG','SPAG','PIWIL','BAGE','TRAG'}), :);
+data1 = raw(:,8:27);
+data2 = DREAMraw(:,8:27);
+data3 = CTraw(:,8:27);
+data4 = CTraw([1,10,12,15,27,32],:);
+plotdata1 = table2array(data2);
+plotdata2 = plotdata1';
+plotdata3 = table2array(data3);
+plotdata4 = plotdata3';
+plotdata5 = plotdata3([1,10,12,15,27,32],:);
+names1 = data2.Properties.VariableNames;
+names2 = data3.Properties.VariableNames;
+figure(1);
+suptitle('Fig. 11: Heat Map of DREAM Complex Expression');
+subplot(1,2,1)
+heatmap(plotdata1)
+colormap(pink)
+subplot(1,2,2)
+heatmap(plotdata2)
+colormap(jet)
+figure(2);
+suptitle('Fig. 12: Heat Map of CT Gene Expression');
+subplot(1,2,1)
+heatmap(plotdata3)
+colormap(pink)
+subplot(1,2,2)
+heatmap(plotdata5)
+colormap(jet)
+
+
